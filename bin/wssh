@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 if __name__ == '__main__':
     from wssh import client
@@ -51,6 +51,11 @@ if __name__ == '__main__':
     parser.add_argument('command',
         nargs='*',
         help='optional command to be executed')
+        
+    parser.add_argument('logintype',
+        nargs='*',
+        default='ssh',
+        help='logintype, support ssh/telnet')
 
     args = parser.parse_args()
 
@@ -91,6 +96,7 @@ if __name__ == '__main__':
     params = {
         'password': password,
         'port': str(args.ssh_port),
+        'logintype': logintype,
         'private_key': key,
         'key_passphrase': key_passphrase,
         'run': ' '.join(args.command) if args.command else None,

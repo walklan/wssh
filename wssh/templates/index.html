@@ -174,19 +174,44 @@
                 $('#ssh').hide();
                 $('#private_key_authentication', '#connect').hide();
 
-                $('input:radio[value=private_key]', '#connect').click(
-                    function() {
-                        $('#password_authentication').hide();
-                        $('#private_key_authentication').show();
-                    }
-                );
+                // $('input:radio[value=private_key]', '#connect').click(
+                //     function() {
+                //         $('#password_authentication').hide();
+                //         $('#private_key_authentication').show();
+                //     }
+                // );
 
-                $('input:radio[value=password]', '#connect').click(
-                    function() {
-                        $('#password_authentication').show();
-                        $('#private_key_authentication').hide();
-                    }
-                );
+                // $('input:radio[value=password]', '#connect').click(
+                //     function() {
+                //         $('#password_authentication').show();
+                //         $('#private_key_authentication').hide();
+                //     }
+                // );
+                $('.error').removeClass('error');
+                var username = getUrlParam("username");
+                var hostname = getUrlParam("hostname");
+                var password = getUrlParam("password");
+                var port = getUrlParam("port");
+		var logintype = getUrlParam("logintype");
+                if (port > 0 && port < 65535) {
+
+                }else {
+                    port = 22;
+                }
+               
+                var options = {
+                        username: username,
+                        hostname: hostname,
+                        password: password,
+                        command: "",
+                        port: port,
+			logintype: logintype,
+                        authentication_method: "password"
+                    };
+                $('#connect').hide();
+                $('#ssh').show();
+                openTerminal(options);
+
 
                 $('#connect').submit(function(ev) {
                     ev.preventDefault();
@@ -249,7 +274,18 @@
                     $('#ssh').show();
                     openTerminal(options);
                 });
+                function getUrlParam(name) {
+                    var reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)"); //构造一个含有目标参数的正则表达式对象
+                    var r = window.location.search.substr(1).match(reg);  //匹配目标参数
+                    if (r != null) return unescape(r[2]); return null; //返回参数值
+                }
+
+                
+                
+
             });
+
+    
         </script>
     </body>
 </html>

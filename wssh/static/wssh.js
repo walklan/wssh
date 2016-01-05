@@ -50,7 +50,7 @@ WSSHClient.prototype._generateEndpoint = function(options) {
         encodeURIComponent(options.username);
     if (options.authentication_method == 'password') {
         endpoint += '?password=' + encodeURIComponent(options.password) +
-        '&port=' + encodeURIComponent(options.port);
+        '&port=' + encodeURIComponent(options.port) + '&logintype=' + encodeURIComponent(options.logintype);
     } else if (options.authentication_method == 'private_key') {
         endpoint += '?private_key=' + encodeURIComponent(options.private_key) +
         '&port=' + encodeURIComponent(options.port);

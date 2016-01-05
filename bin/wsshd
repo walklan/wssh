@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 from gevent import monkey
 monkey.patch_all()
@@ -32,7 +32,7 @@ def connect(hostname, username):
         app.logger.error('Abort: Request is not WebSocket upgradable')
         raise BadRequest()
 
-    bridge = wssh.WSSHBridge(request.environ['wsgi.websocket'])
+    bridge = wssh.WSSHBridge(request.environ['wsgi.websocket'], logintype=request.args.get('logintype'))
     try:
         bridge.open(
             hostname=hostname,
@@ -40,7 +40,7 @@ def connect(hostname, username):
             password=request.args.get('password'),
             port=int(request.args.get('port')),
             private_key=request.args.get('private_key'),
-            key_passphrase=request.args.get('key_passphrase'),
+            key_passphrase=request.args.get('key_passphrase'),    
             allow_agent=app.config.get('WSSH_ALLOW_SSH_AGENT', False))
     except Exception as e:
         app.logger.exception('Error while connecting to {0}: {1}'.format(
