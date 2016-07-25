@@ -17,28 +17,41 @@ from paramiko.dsskey import DSSKey
 from paramiko.rsakey import RSAKey
 from paramiko.ssh_exception import SSHException
 
+import struct
 import telnetlib
 import socket
 import json
+import os
+import re
+import time
 
 from StringIO import StringIO
 
 class WSSHBridge(object):
-    """ WebSocket to SSH Bridge Server """
+    """ WebSocket to SSH Bridge Server
 
-    def __init__(self, websocket, logintype='ssh'):
+    support telnet protocol
+    """
+
+    def __init__(self, websocket, logintype='ssh', width=80):
         """ Initialize a WSSH Bridge
 
         The websocket must be the one created by gevent-websocket
         """
         self._websocket = websocket
         self._logintype = logintype
+        self._buffsize = 10240
+        self._width = width
+        if self._width and self._width.isdigit():
+            self._width = int(self._width)
+        else:
+            self._width = 80
         self._tasks = []
         if self._logintype == 'telnet':
-            self._ssh = telnetlib
+            self._cli = telnetlib
         else:
-            self._ssh = paramiko.SSHClient()
-            self._ssh.set_missing_host_key_policy(
+            self._cli = paramiko.SSHClient()
+            self._cli.set_missing_host_key_policy(
                 paramiko.AutoAddPolicy())
 
     def _load_private_key(self, private_key, passphrase=None):
@@ -87,14 +100,11 @@ class WSSHBridge(object):
         """
         if self._logintype == 'telnet':
             try:
-                self._ssh = telnetlib.Telnet(hostname,port)
-                self._ssh.read_until(': ')
-                #self._ssh.read_some()
-                self._ssh.write(username.encode('ascii') + b'\n')
-                self._ssh.read_until(': ')
-                #self._ssh.read_some()
-                self._ssh.write(password.encode('ascii') + b'\n')
-                ### telnetlib, process_rawq, line-478,self.sock.sendall(IAC + DONT + opt)->self.sock.sendall(IAC + DO + opt)
+                self._cli = telnetlib.Telnet(hostname,port)
+                self._cli.sock.sendall(telnetlib.IAC + telnetlib.WILL + telnetlib.NAWS)
+                self._cli.sock.sendall(telnetlib.IAC + telnetlib.SB + telnetlib.NAWS + struct.pack(">H", self._width) + struct.pack(">H", 24) + telnetlib.IAC + telnetlib.SE)
+                self.invoke_telnetlogin(self._cli, username, password)
+                ### telnetlib, process_rawq, line-478,mod,self.sock.sendall(IAC + DONT + opt)->self.sock.sendall(IAC + DO + opt)
             except socket.gaierror as e:
                 self._websocket.send(json.dumps({'error':
                     'Could not resolve hostname {0}: {1}'.format(
@@ -108,7 +118,7 @@ class WSSHBridge(object):
                 pkey = None
                 if private_key:
                     pkey = self._load_private_key(private_key, key_passphrase)
-                self._ssh.connect(
+                self._cli.connect(
                     hostname=hostname,
                     port=port,
                     username=username,
@@ -134,13 +144,14 @@ class WSSHBridge(object):
                 if not data:
                     return
                 data = json.loads(str(data))
+
                 if self._logintype == 'telnet':
                     if 'data' in data:
                         channel.write(data['data'].encode('ascii'))
                 else:
                     if 'resize' in data:
                         channel.resize_pty(
-                            data['resize'].get('width', 80),
+                            data['resize'].get('width', self._width),
                             data['resize'].get('height', 24))
                     if 'data' in data:
                         channel.send(data['data'])
@@ -155,15 +166,11 @@ class WSSHBridge(object):
                 if self._logintype == 'telnet':
                     data = channel.read_very_eager()
                 else:
-                    data = channel.recv(1024)
+                    data = channel.recv(self._buffsize)
                 if not len(data):
                     return
-                try:
-                    data = data.decode("gbk", 'ignore').encode("utf-8")
-                    self._websocket.send(json.dumps({'data': data}))
-                except BaseException,e:
-                    print "data=%r, err=%r" %(data,e)
-                    pass
+
+                self._websocket.send(json.dumps({'data': data}))
         finally:
             self.close()
 
@@ -182,31 +189,7 @@ class WSSHBridge(object):
         """ Terminate a bridge session """
         gevent.killall(self._tasks, block=True)
         self._tasks = []
-        self._ssh.close()
-
-    def execute(self, command, term='xterm'):
-        """ Execute a command on the remote server
-
-        This method will forward traffic from the websocket to the SSH server
-        and the other way around.
-
-        You must connect to a SSH server using ssh_connect()
-        prior to starting the session.
-        """
-        if self._logintype == 'telnet':
-            self._ssh.write(command.encode('ascii')+b'\n')
-            data = self._ssh.read_eager()
-            self._websocket.send(json.dumps({'data': data}))
-            channel = self._ssh
-            self._bridge(channel)
-            channel.close()
-        else:
-            transport = self._ssh.get_transport()
-            channel = transport.open_session()
-            channel.get_pty(term)
-            channel.exec_command(command)
-            self._bridge(channel)
-            channel.close()
+        self._cli.close()
 
     def shell(self, term='xterm'):
         """ Start an interactive shell session
@@ -218,8 +201,45 @@ class WSSHBridge(object):
         prior to starting the session.
         """
         if self._logintype == 'telnet':
-            channel = self._ssh
+            channel = self._cli
         else:
-            channel = self._ssh.invoke_shell(term)
+            channel = self._cli.invoke_shell(term, width=self._width)
         self._bridge(channel)
         channel.close()
+
+    def execute(self, command, term='xterm'):
+        """ Execute a command on the remote server
+
+        This method will forward traffic from the websocket to the SSH server
+        and the other way around.
+
+        You must connect to a SSH server using ssh_connect()
+        prior to starting the session.
+        """
+        if self._logintype == 'telnet':
+            channel = self._cli
+        else:
+            channel = self._cli.invoke_shell(term, width=self._width)
+
+        if command:
+            self.executecmd(channel, command)
+
+        self._bridge(channel)
+        channel.close()
+
+    def invoke_telnetlogin(self, channel, username=None, password=None, buff=''):
+        if username:
+            while not re.search("(name|ogin):\s*$", buff, re.M|re.I):
+                buff += channel.read_eager()
+            channel.write(username.encode('ascii') + b'\n')
+            buff = ''
+        if password:
+            while not re.search("assword:\s*$", buff, re.M|re.I):
+                buff += channel.read_eager()
+            channel.write(password.encode('ascii') + b'\n')
+
+    def executecmd(self, channel, command):
+        if self._logintype == 'telnet':
+            channel.write(command.encode('ascii') + b'\n')
+        else:
+            channel.send(command.encode('ascii') + b'\n')

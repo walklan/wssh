@@ -62,6 +62,9 @@ WSSHClient.prototype._generateEndpoint = function(options) {
         endpoint += '&run=' + encodeURIComponent(
             options.command);
     }
+    if (options.widths != "") {
+        endpoint += '&widths=' + encodeURIComponent(options.widths);
+    }
     return endpoint;
 };
 
