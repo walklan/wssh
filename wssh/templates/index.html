@@ -194,6 +194,15 @@
                     }
                 );
 
+                $("#logintype").change(function(){
+                    var logintype = $('#logintype').val();
+                    if (logintype == 'ssh') {
+                        $("#portnumber").attr("value",'22');
+                    } else {
+                        $("#portnumber").attr("value",'23');
+                    }
+                });
+
                 $('#connect').submit(function(ev) {
                     ev.preventDefault();
 
